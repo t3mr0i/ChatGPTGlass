@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">ChatGPTGlass</string>
+    <string name="voice_trigger">Chat GPT</string>
+</resources>
