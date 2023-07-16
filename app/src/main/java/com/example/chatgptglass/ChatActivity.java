@@ -48,8 +48,8 @@ public class ChatActivity extends Activity {
     private TextToSpeech tts;
     private ToneGenerator toneGen;
     private MediaPlayer mediaPlayer;
-
     private GestureDetector detector;
+    private boolean allowScroll = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -126,20 +126,28 @@ public class ChatActivity extends Activity {
         gestureDetector.setBaseListener(gesture -> {
             // Implement scrolling
             if (gesture == Gesture.SWIPE_DOWN) {
-                // Move TextView scroll down
-                tvResponse.scrollBy(0, 55);
+                if (allowScroll) {
+                    // Move TextView scroll down
+                    tvResponse.scrollBy(0, 55);
+                }
+                else {
+                    finish();
+                }
                 return true;
             } else if (gesture == Gesture.SWIPE_UP) {
-                // Move TextView scroll up
-                tvResponse.scrollBy(0, -55);
+                if (allowScroll) {
+                    tvResponse.scrollBy(0, -55);
+                }
                 return true;
-            } else if (gesture == Gesture.TAP) { // If a tap is detected
+            } else if (gesture == Gesture.TAP) {
                 toneGen.startTone(ToneGenerator.TONE_PROP_PROMPT);
                 tts.stop();
                 Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
                 intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
                 intent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, "com.example.chatgptglass");
                 recognizer.startListening(intent);
+                allowScroll = false;
+
                 return true;
             }
             return false;
@@ -229,6 +237,8 @@ public class ChatActivity extends Activity {
 
                     // Use the speak method compatible with pre-Lollipop devices
                     tts.speak(output, TextToSpeech.QUEUE_FLUSH, params);
+                    allowScroll = true;
+
                 } catch (JSONException e) {
                     e.printStackTrace();
                 }

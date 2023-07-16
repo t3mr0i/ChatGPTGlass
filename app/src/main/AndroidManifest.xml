@@ -19,6 +19,8 @@
             android:label="@string/app_name"
             android:theme="@style/Theme.ChatGPTGlass">
             <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
                 <action android:name="com.google.android.glass.action.VOICE_TRIGGER" />
             </intent-filter>
             <meta-data
