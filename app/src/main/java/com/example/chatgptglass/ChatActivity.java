@@ -1,6 +1,7 @@
 package com.example.chatgptglass;
 
 import android.app.Activity;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.hardware.SensorEventListener;
@@ -19,9 +20,11 @@ import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.ProgressBar;
+import android.widget.RemoteViews;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import com.google.android.glass.timeline.LiveCard;
 import com.google.android.glass.touchpad.Gesture;
 import com.google.android.glass.touchpad.GestureDetector;
 
@@ -61,7 +64,10 @@ public class ChatActivity extends Activity {
     private Runnable autoScrollRunnable;
     private final int SCROLL_DELAY_MS = 500; // Scroll every 500 milliseconds
     private final int SCROLL_AMOUNT_PX = 25; // Scroll by 22 pixels
-
+    private static final String LIVE_CARD_TAG = "ChatGPTGlass";
+    private LiveCard mLiveCard;
+    public static final String EXTRA_LAST_OUTPUT = "lastOutput";
+    private String output;
 
     private ScrollView scrollView;
 
@@ -98,7 +104,10 @@ public class ChatActivity extends Activity {
         mediaPlayerWaiting.setLooping(true);
 
         detector = createGestureDetector(this);
-
+        if (getIntent().hasExtra(EXTRA_LAST_OUTPUT)) {
+            String lastOutput = getIntent().getStringExtra(EXTRA_LAST_OUTPUT);
+            tvResponse.setText(lastOutput);
+        }
         tts = new TextToSpeech(this, status -> {
             if (status != TextToSpeech.ERROR) {
                 tts.setLanguage(Locale.US);
@@ -160,6 +169,29 @@ public class ChatActivity extends Activity {
             } else if (gesture == Gesture.SWIPE_LEFT) {
                 if (allowScroll) {
                     tvResponse.scrollBy(0, -60);
+                }
+                return true;
+
+            } else if (gesture == Gesture.SWIPE_UP) {
+                // Stop the speech
+                tts.stop();
+            } else if (gesture == Gesture.SWIPE_DOWN) {
+                if (output != null) {
+                    RemoteViews remoteViews = new RemoteViews(ChatActivity.this.getPackageName(), R.layout.live_card_layout);
+                    remoteViews.setCharSequence(R.id.tvResponse, "setText", output);
+                    if (mLiveCard == null) {
+                        mLiveCard = new LiveCard(ChatActivity.this, LIVE_CARD_TAG);
+                        mLiveCard.setViews(remoteViews);
+                        mLiveCard.publish(LiveCard.PublishMode.REVEAL);
+                    } else {
+                        mLiveCard.setViews(remoteViews); // Update the LiveCard's RemoteViews
+                    }
+                    Intent intent = new Intent(ChatActivity.this, ChatActivity.class);
+                    intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+                    intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "de-DE");
+                    intent.putExtra(EXTRA_LAST_OUTPUT, output);
+                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                    mLiveCard.setAction(PendingIntent.getActivity(ChatActivity.this, 0, intent, 0));
                 }
                 return true;
             } else if (gesture == Gesture.TAP) {
@@ -241,11 +273,12 @@ public class ChatActivity extends Activity {
                     JSONObject jsonPayload = new JSONObject();
                     try {
                         JSONArray jsonArray = new JSONArray();
+                        jsonArray.put(new JSONObject().put("role", "system").put("content", ""));
                         jsonArray.put(new JSONObject().put("role", "user").put("content", question));
                         jsonPayload.put("model", "gpt-3.5-turbo");
                         jsonPayload.put("messages", jsonArray);
-                        jsonPayload.put("max_tokens", 60);
-                        jsonPayload.put("temperature", 0.7);
+                        jsonPayload.put("max_tokens", 200);
+                        jsonPayload.put("temperature", 0.4);
                     } catch (JSONException e) {
                         e.printStackTrace();
                     }
@@ -255,6 +288,7 @@ public class ChatActivity extends Activity {
                     tvResponse.setVisibility(View.GONE);
 
                     mediaPlayerWaiting.start();
+
                 }
             }
         }
@@ -320,6 +354,7 @@ public class ChatActivity extends Activity {
 
         @Override
         protected void onPostExecute(String result) {
+
             progressBar.setVisibility(View.GONE);
             mediaPlayerWaiting.pause();
             mediaPlayerWaiting.seekTo(0);
@@ -329,23 +364,29 @@ public class ChatActivity extends Activity {
             if (result != null) {
                 try {
                     JSONObject jsonResponse = new JSONObject(result);
-                    String output = jsonResponse.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
-                    tvResponse.setText(output);
 
-                    // Prepare parameters for TextToSpeech
+                    // Save the output to the global variable
+                    output = jsonResponse.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
+
+                    // Check the length of the output
+                    if (output.length() > 4000) {
+                        int chunkCount = output.length() / 4000;     // chunkCount to be increased for longer text
+                        for (int i = 0; i <= chunkCount; i++) {
+                            int max = 4000 * (i + 1);
+                            if (max >= output.length()) {
+                                appendToTextView(output.substring(4000 * i));
+                            } else {
+                                appendToTextView(output.substring(4000 * i, max));
+                            }
+                        }
+                    } else {
+                        appendToTextView(output);
+                    }
+
+                    // Speak the output
                     HashMap<String, String> params = new HashMap<>();
                     params.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "GPT3_ANSWER");
-
-                    // Use the speak method compatible with pre-Lollipop devices
                     tts.speak(output, TextToSpeech.QUEUE_FLUSH, params);
-
-                    // Inject a 14000ms delay before allowing scroll
-                    new Handler().postDelayed(new Runnable() {
-                        public void run() {
-                            scrollView.fullScroll(View.FOCUS_DOWN);
-                            allowScroll = true;
-                        }
-                    }, 8000);
 
                 } catch (JSONException e) {
                     e.printStackTrace();
@@ -353,6 +394,27 @@ public class ChatActivity extends Activity {
             } else {
                 Log.e(TAG, "Error fetching response from GPT-3");
             }
+        }
+
+
+        void appendToTextView(final String text) {
+            final int scrollAmount = tvResponse.getLayout().getLineTop(tvResponse.getLineCount()) - tvResponse.getHeight();
+
+            // ScrollView auto-scrolling
+            if (scrollAmount > 0)
+                tvResponse.scrollTo(0, scrollAmount);
+            else
+                tvResponse.scrollTo(0, 0);
+
+            // Replace the existing text
+            tvResponse.setText(text);
+
+            // Inject a 1000ms delay before allowing scroll
+            new Handler().postDelayed(new Runnable() {
+                public void run() {
+                    allowScroll = true;
+                }
+            }, 1000);
         }
     }
 
@@ -377,6 +439,10 @@ public class ChatActivity extends Activity {
         }
         if (autoScrollHandler != null) {
             autoScrollHandler.removeCallbacks(autoScrollRunnable);
+        }
+        if (mLiveCard != null && mLiveCard.isPublished()) {
+            mLiveCard.unpublish();
+            mLiveCard = null;
         }
     }
 }
