@@ -3,6 +3,7 @@ package com.example.chatgptglass;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.hardware.SensorEventListener;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.media.ToneGenerator;
@@ -23,10 +24,6 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.OutputStreamWriter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
@@ -47,77 +44,55 @@ public class ChatActivity extends Activity {
     private SpeechRecognizer recognizer;
     private TextToSpeech tts;
     private ToneGenerator toneGen;
-    private MediaPlayer mediaPlayer;
+    private MediaPlayer mediaPlayerWaiting;
+    ;
+    private MediaPlayer mediaPlayerTapPrompt;
+    private MediaPlayer mediaPlayerResultsDone;
     private GestureDetector detector;
     private boolean allowScroll = false;
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (recognizer != null) {
+            recognizer.cancel();
+            recognizer.destroy();
+            recognizer = null;
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (recognizer == null) {
+            recognizer = SpeechRecognizer.createSpeechRecognizer(this);
+            recognizer.setRecognitionListener(new MyRecognitionListener());
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_chat);
         tvResponse = findViewById(R.id.tvResponse);
-        mediaPlayer = MediaPlayer.create(this, R.raw.waiting);
-        mediaPlayer.setLooping(true);
+
+        mediaPlayerWaiting = MediaPlayer.create(this, R.raw.waiting);
+        mediaPlayerTapPrompt = MediaPlayer.create(this, R.raw.tap_prompt);
+        mediaPlayerResultsDone = MediaPlayer.create(this, R.raw.results_done);
+        mediaPlayerWaiting.setLooping(true);
+
         detector = createGestureDetector(this);
+
         tts = new TextToSpeech(this, status -> {
             if (status != TextToSpeech.ERROR) {
                 tts.setLanguage(Locale.US);
             }
         });
-        toneGen = new ToneGenerator(AudioManager.STREAM_MUSIC, 100); // 100 = max volume
+
+        toneGen = new ToneGenerator(AudioManager.STREAM_MUSIC, 78); // 100 = max volume
 
         recognizer = SpeechRecognizer.createSpeechRecognizer(this);
-        recognizer.setRecognitionListener(new RecognitionListener() {
-            @Override
-            public void onReadyForSpeech(Bundle params) { }
-
-            @Override
-            public void onBeginningOfSpeech() {
-            }
-
-            @Override
-            public void onRmsChanged(float rmsdB) { }
-
-            @Override
-            public void onBufferReceived(byte[] buffer) { }
-
-            @Override
-            public void onEndOfSpeech() { }
-
-            @Override
-            public void onError(int error) { }
-
-            @Override
-            public void onResults(Bundle results) {
-                ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-                if (matches != null && matches.size() > 0) {
-                    toneGen.startTone(ToneGenerator.TONE_PROP_ACK);
-
-                    String question = matches.get(0);
-                    JSONObject jsonPayload = new JSONObject();
-                    try {
-                        JSONArray jsonArray = new JSONArray();
-                        jsonArray.put(new JSONObject().put("role", "user").put("content", question));
-                        jsonPayload.put("model", "gpt-3.5-turbo");
-                        jsonPayload.put("messages", jsonArray);
-                        jsonPayload.put("max_tokens", 60);
-                        jsonPayload.put("temperature", 0.7);
-                    } catch (JSONException e) {
-                        e.printStackTrace();
-                    }
-                    String jsonString = jsonPayload.toString();
-                    new PostTask().execute("https://api.openai.com/v1/chat/completions", jsonString);
-                    mediaPlayer.start();
-
-                }
-            }
-
-            @Override
-            public void onPartialResults(Bundle partialResults) { }
-
-            @Override
-            public void onEvent(int eventType, Bundle params) { }
-        });
+        recognizer.setRecognitionListener(new MyRecognitionListener());
     }
 
     private GestureDetector createGestureDetector(Context context) {
@@ -140,7 +115,7 @@ public class ChatActivity extends Activity {
                 }
                 return true;
             } else if (gesture == Gesture.TAP) {
-                toneGen.startTone(ToneGenerator.TONE_PROP_PROMPT);
+                mediaPlayerTapPrompt.start();
                 tts.stop();
                 Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
                 intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
@@ -163,6 +138,64 @@ public class ChatActivity extends Activity {
         return super.onGenericMotionEvent(event);
     }
 
+    private class MyRecognitionListener implements RecognitionListener {
+        @Override
+        public void onReadyForSpeech(Bundle params) { }
+
+        @Override
+        public void onBeginningOfSpeech() { }
+
+        @Override
+        public void onRmsChanged(float rmsdB) { }
+
+        @Override
+        public void onBufferReceived(byte[] buffer) { }
+
+        @Override
+        public void onEndOfSpeech() { }
+
+        @Override
+        public void onError(int error) { }
+
+        @Override
+        public void onResults(Bundle results) {
+            ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+            if (matches != null && matches.size() > 0) {
+
+                String question = matches.get(0);
+                if (question.startsWith("ok glass")) {
+                    // Detected a nod!
+                    tts.stop();
+                    Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+                    intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+                    intent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, "com.example.chatgptglass");
+                    recognizer.startListening(intent);
+                    allowScroll = false;
+                } else {
+                    JSONObject jsonPayload = new JSONObject();
+                    try {
+                        JSONArray jsonArray = new JSONArray();
+                        jsonArray.put(new JSONObject().put("role", "user").put("content", question));
+                        jsonPayload.put("model", "gpt-3.5-turbo");
+                        jsonPayload.put("messages", jsonArray);
+                        jsonPayload.put("max_tokens", 60);
+                        jsonPayload.put("temperature", 0.7);
+                    } catch (JSONException e) {
+                        e.printStackTrace();
+                    }
+                    String jsonString = jsonPayload.toString();
+                    new PostTask().execute("https://api.openai.com/v1/chat/completions", jsonString);
+                    mediaPlayerWaiting.start();
+                }
+            }
+        }
+
+        @Override
+        public void onPartialResults(Bundle partialResults) { }
+
+        @Override
+        public void onEvent(int eventType, Bundle params) { }
+    }
 
     private class PostTask extends AsyncTask<String, Void, String> {
         @Override
@@ -211,8 +244,6 @@ public class ChatActivity extends Activity {
 
                 String responseBody = response.body().string();
                 Log.i(TAG, "Successful HTTP Response: " + responseBody);
-                toneGen.startTone(ToneGenerator.TONE_PROP_BEEP);
-
                 return responseBody;
 
             } catch (Exception e) {
@@ -223,8 +254,9 @@ public class ChatActivity extends Activity {
 
         @Override
         protected void onPostExecute(String result) {
-            mediaPlayer.pause();
-            mediaPlayer.seekTo(0);
+            mediaPlayerWaiting.pause();
+            mediaPlayerWaiting.seekTo(0);
+            mediaPlayerResultsDone.start();
             if (result != null) {
                 try {
                     JSONObject jsonResponse = new JSONObject(result);
@@ -258,8 +290,14 @@ public class ChatActivity extends Activity {
         if (recognizer != null) {
             recognizer.destroy();
         }
-        if (mediaPlayer != null) {
-            mediaPlayer.release();
+        if (mediaPlayerWaiting != null) {
+            mediaPlayerWaiting.release();
+        }
+        if (mediaPlayerTapPrompt != null) {
+            mediaPlayerTapPrompt.release();
+        }
+        if (mediaPlayerResultsDone != null) {
+            mediaPlayerResultsDone.release();
         }
     }
 }
