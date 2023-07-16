@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">ChatGPTGlass</string>
+    <string name="app_name">GlassGPT</string>
     <string name="voice_trigger">Chat GPT</string>
     <string name="voice_trigger_start">open GlassGPT</string>
 

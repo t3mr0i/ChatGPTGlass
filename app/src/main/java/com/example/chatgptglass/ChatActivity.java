@@ -9,12 +9,17 @@ import android.media.MediaPlayer;
 import android.media.ToneGenerator;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Handler;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
 import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
 import android.util.Log;
 import android.view.MotionEvent;
+import android.view.View;
+import android.widget.ProgressBar;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.google.android.glass.touchpad.Gesture;
@@ -40,16 +45,25 @@ import okhttp3.Response;
 
 public class ChatActivity extends Activity {
     private static final String TAG = "ChatActivity";
+    private static final int SPEECH_REQUEST_CODE = 0;
+
     private TextView tvResponse;
     private SpeechRecognizer recognizer;
     private TextToSpeech tts;
     private ToneGenerator toneGen;
     private MediaPlayer mediaPlayerWaiting;
-    ;
     private MediaPlayer mediaPlayerTapPrompt;
     private MediaPlayer mediaPlayerResultsDone;
     private GestureDetector detector;
     private boolean allowScroll = false;
+    private ProgressBar progressBar;
+    private Handler autoScrollHandler;
+    private Runnable autoScrollRunnable;
+    private final int SCROLL_DELAY_MS = 500; // Scroll every 500 milliseconds
+    private final int SCROLL_AMOUNT_PX = 25; // Scroll by 22 pixels
+
+
+    private ScrollView scrollView;
 
     @Override
     protected void onPause() {
@@ -75,6 +89,8 @@ public class ChatActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_chat);
         tvResponse = findViewById(R.id.tvResponse);
+        progressBar = findViewById(R.id.progressBar);
+        scrollView = findViewById(R.id.scrollView);
 
         mediaPlayerWaiting = MediaPlayer.create(this, R.raw.waiting);
         mediaPlayerTapPrompt = MediaPlayer.create(this, R.raw.tap_prompt);
@@ -88,30 +104,62 @@ public class ChatActivity extends Activity {
                 tts.setLanguage(Locale.US);
             }
         });
+        tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+            @Override
+            public void onStart(String utteranceId) {
+                // This is called when the speech starts.
+                // Start auto-scrolling here.
+                autoScrollHandler.post(autoScrollRunnable);
+            }
+
+            @Override
+            public void onDone(String utteranceId) {
+                // This is called when the speech finishes.
+                // Stop auto-scrolling here.
+                autoScrollHandler.removeCallbacks(autoScrollRunnable);
+            }
+
+            @Override
+            public void onError(String utteranceId) {
+                // This is called when there is an error.
+                // Stop auto-scrolling here.
+                autoScrollHandler.removeCallbacks(autoScrollRunnable);
+            }
+        });
 
         toneGen = new ToneGenerator(AudioManager.STREAM_MUSIC, 78); // 100 = max volume
 
         recognizer = SpeechRecognizer.createSpeechRecognizer(this);
         recognizer.setRecognitionListener(new MyRecognitionListener());
+
+        autoScrollHandler = new Handler();
+        autoScrollRunnable = new Runnable() {
+            @Override
+            public void run() {
+                int newScrollYPosition = scrollView.getScrollY() + SCROLL_AMOUNT_PX;
+                scrollView.smoothScrollTo(0, newScrollYPosition);
+                autoScrollHandler.postDelayed(this, SCROLL_DELAY_MS);
+            }
+        };
     }
+
 
     private GestureDetector createGestureDetector(Context context) {
         GestureDetector gestureDetector = new GestureDetector(context);
         // Create the listener for the GestureDetector
         gestureDetector.setBaseListener(gesture -> {
             // Implement scrolling
-            if (gesture == Gesture.SWIPE_DOWN) {
+            if (gesture == Gesture.SWIPE_RIGHT) {
                 if (allowScroll) {
                     // Move TextView scroll down
-                    tvResponse.scrollBy(0, 55);
-                }
-                else {
+                    tvResponse.scrollBy(0, 60);
+                } else {
                     finish();
                 }
                 return true;
-            } else if (gesture == Gesture.SWIPE_UP) {
+            } else if (gesture == Gesture.SWIPE_LEFT) {
                 if (allowScroll) {
-                    tvResponse.scrollBy(0, -55);
+                    tvResponse.scrollBy(0, -60);
                 }
                 return true;
             } else if (gesture == Gesture.TAP) {
@@ -119,8 +167,7 @@ public class ChatActivity extends Activity {
                 tts.stop();
                 Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
                 intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-                intent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, "com.example.chatgptglass");
-                recognizer.startListening(intent);
+                startActivityForResult(intent, SPEECH_REQUEST_CODE);
                 allowScroll = false;
 
                 return true;
@@ -140,26 +187,46 @@ public class ChatActivity extends Activity {
 
     private class MyRecognitionListener implements RecognitionListener {
         @Override
-        public void onReadyForSpeech(Bundle params) { }
+        public void onReadyForSpeech(Bundle params) {
+        }
 
         @Override
-        public void onBeginningOfSpeech() { }
+        public void onBeginningOfSpeech() {
+        }
 
         @Override
-        public void onRmsChanged(float rmsdB) { }
+        public void onRmsChanged(float rmsdB) {
+        }
 
         @Override
-        public void onBufferReceived(byte[] buffer) { }
+        public void onBufferReceived(byte[] buffer) {
+        }
 
         @Override
-        public void onEndOfSpeech() { }
+        public void onEndOfSpeech() {
+        }
 
         @Override
-        public void onError(int error) { }
+        public void onError(int error) {
+        }
 
         @Override
         public void onResults(Bundle results) {
-            ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+        }
+
+        @Override
+        public void onPartialResults(Bundle partialResults) {
+        }
+
+        @Override
+        public void onEvent(int eventType, Bundle params) {
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == SPEECH_REQUEST_CODE && resultCode == RESULT_OK) {
+            ArrayList<String> matches = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
             if (matches != null && matches.size() > 0) {
 
                 String question = matches.get(0);
@@ -168,8 +235,7 @@ public class ChatActivity extends Activity {
                     tts.stop();
                     Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
                     intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-                    intent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, "com.example.chatgptglass");
-                    recognizer.startListening(intent);
+                    startActivityForResult(intent, SPEECH_REQUEST_CODE);
                     allowScroll = false;
                 } else {
                     JSONObject jsonPayload = new JSONObject();
@@ -185,16 +251,14 @@ public class ChatActivity extends Activity {
                     }
                     String jsonString = jsonPayload.toString();
                     new PostTask().execute("https://api.openai.com/v1/chat/completions", jsonString);
+                    progressBar.setVisibility(View.VISIBLE);
+                    tvResponse.setVisibility(View.GONE);
+
                     mediaPlayerWaiting.start();
                 }
             }
         }
-
-        @Override
-        public void onPartialResults(Bundle partialResults) { }
-
-        @Override
-        public void onEvent(int eventType, Bundle params) { }
+        super.onActivityResult(requestCode, resultCode, data);
     }
 
     private class PostTask extends AsyncTask<String, Void, String> {
@@ -207,10 +271,12 @@ public class ChatActivity extends Activity {
                 TrustManager[] trustAllCerts = new TrustManager[]{
                         new X509TrustManager() {
                             @Override
-                            public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
+                            public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) {
+                            }
 
                             @Override
-                            public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
+                            public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) {
+                            }
 
                             @Override
                             public java.security.cert.X509Certificate[] getAcceptedIssuers() {
@@ -254,9 +320,12 @@ public class ChatActivity extends Activity {
 
         @Override
         protected void onPostExecute(String result) {
+            progressBar.setVisibility(View.GONE);
             mediaPlayerWaiting.pause();
             mediaPlayerWaiting.seekTo(0);
             mediaPlayerResultsDone.start();
+            tvResponse.setVisibility(View.VISIBLE);
+
             if (result != null) {
                 try {
                     JSONObject jsonResponse = new JSONObject(result);
@@ -269,7 +338,14 @@ public class ChatActivity extends Activity {
 
                     // Use the speak method compatible with pre-Lollipop devices
                     tts.speak(output, TextToSpeech.QUEUE_FLUSH, params);
-                    allowScroll = true;
+
+                    // Inject a 14000ms delay before allowing scroll
+                    new Handler().postDelayed(new Runnable() {
+                        public void run() {
+                            scrollView.fullScroll(View.FOCUS_DOWN);
+                            allowScroll = true;
+                        }
+                    }, 8000);
 
                 } catch (JSONException e) {
                     e.printStackTrace();
@@ -298,6 +374,9 @@ public class ChatActivity extends Activity {
         }
         if (mediaPlayerResultsDone != null) {
             mediaPlayerResultsDone.release();
+        }
+        if (autoScrollHandler != null) {
+            autoScrollHandler.removeCallbacks(autoScrollRunnable);
         }
     }
 }
