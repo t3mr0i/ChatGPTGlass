@@ -1,6 +1,7 @@
 package com.example.chatgptglass;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
@@ -14,6 +15,9 @@ import android.speech.tts.TextToSpeech;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.widget.TextView;
+
+import com.google.android.glass.touchpad.Gesture;
+import com.google.android.glass.touchpad.GestureDetector;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -45,6 +49,8 @@ public class ChatActivity extends Activity {
     private ToneGenerator toneGen;
     private MediaPlayer mediaPlayer;
 
+    private GestureDetector detector;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -52,6 +58,7 @@ public class ChatActivity extends Activity {
         tvResponse = findViewById(R.id.tvResponse);
         mediaPlayer = MediaPlayer.create(this, R.raw.waiting);
         mediaPlayer.setLooping(true);
+        detector = createGestureDetector(this);
         tts = new TextToSpeech(this, status -> {
             if (status != TextToSpeech.ERROR) {
                 tts.setLanguage(Locale.US);
@@ -66,8 +73,6 @@ public class ChatActivity extends Activity {
 
             @Override
             public void onBeginningOfSpeech() {
-                toneGen.startTone(ToneGenerator.TONE_PROP_BEEP);
-
             }
 
             @Override
@@ -95,6 +100,7 @@ public class ChatActivity extends Activity {
                         jsonArray.put(new JSONObject().put("role", "user").put("content", question));
                         jsonPayload.put("model", "gpt-3.5-turbo");
                         jsonPayload.put("messages", jsonArray);
+                        jsonPayload.put("max_tokens", 60);
                         jsonPayload.put("temperature", 0.7);
                     } catch (JSONException e) {
                         e.printStackTrace();
@@ -114,17 +120,41 @@ public class ChatActivity extends Activity {
         });
     }
 
+    private GestureDetector createGestureDetector(Context context) {
+        GestureDetector gestureDetector = new GestureDetector(context);
+        // Create the listener for the GestureDetector
+        gestureDetector.setBaseListener(gesture -> {
+            // Implement scrolling
+            if (gesture == Gesture.SWIPE_DOWN) {
+                // Move TextView scroll down
+                tvResponse.scrollBy(0, 55);
+                return true;
+            } else if (gesture == Gesture.SWIPE_UP) {
+                // Move TextView scroll up
+                tvResponse.scrollBy(0, -55);
+                return true;
+            } else if (gesture == Gesture.TAP) { // If a tap is detected
+                toneGen.startTone(ToneGenerator.TONE_PROP_PROMPT);
+                tts.stop();
+                Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+                intent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, "com.example.chatgptglass");
+                recognizer.startListening(intent);
+                return true;
+            }
+            return false;
+        });
+        return gestureDetector;
+    }
+
     @Override
     public boolean onGenericMotionEvent(MotionEvent event) {
-        if (event.getAction() == MotionEvent.ACTION_DOWN) {
-            Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-            intent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, "com.example.chatgptglass");
-            recognizer.startListening(intent);
-            return true;
+        if (detector != null) {
+            return detector.onMotionEvent(event);
         }
         return super.onGenericMotionEvent(event);
     }
+
 
     private class PostTask extends AsyncTask<String, Void, String> {
         @Override
