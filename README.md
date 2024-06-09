@@ -25,6 +25,8 @@ $ cd ChatGPTGlass
 You also need to have your OpenAI API key. Create a Secrets.java file in the src folder of your project and add your OpenAI API key.
 
 ```
+package com.example.chatgptglass;
+
 public class Secrets {
     public static final String OPEN_AI_KEY="your_api_key_goes_here";
 }
