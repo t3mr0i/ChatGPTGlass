@@ -1,12 +1,14 @@
 # GlassGPT
 
 
-GlassGPT is an innovative Android application for Google Glass that interacts with OpenAI's advanced language model, GPT-3.5-turbo. Users can make requests and get text predictions from the model directly on their Google Glass device.
+GlassGPT is an innovative Android application for Google Glass that interacts with OpenAI's advanced language model, GPT-4.1-nano. Users can make requests and get text predictions from the model directly on their Google Glass device. The application now utilizes GPT-4.1-nano, which offers a perfect balance of intelligence, speed, and cost-effectiveness while still supporting image processing capabilities.
 
 Features
 Seamless integration with Google Glass Explorer Edition.
-Fast and efficient interaction with OpenAI's GPT-3.5-turbo.
+Fast and efficient interaction with OpenAI's GPT-4.1-nano model.
 On-demand generation and display of AI responses.
+Support for image processing capabilities.
+Optimized for quick response times and reduced API costs.
 Installation
 To clone and run this application, you'll need Git and Android Studio installed on your computer. From your command line:
 ```

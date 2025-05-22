@@ -273,12 +273,12 @@ public class ChatActivity extends Activity {
                     JSONObject jsonPayload = new JSONObject();
                     try {
                         JSONArray jsonArray = new JSONArray();
-                        jsonArray.put(new JSONObject().put("role", "system").put("content", ""));
+                        jsonArray.put(new JSONObject().put("role", "system").put("content", "You are a helpful assistant responding to voice commands on Google Glass."));
                         jsonArray.put(new JSONObject().put("role", "user").put("content", question));
-                        jsonPayload.put("model", "gpt-3.5-turbo");
+                        jsonPayload.put("model", "gpt-4.1-nano");
                         jsonPayload.put("messages", jsonArray);
                         jsonPayload.put("max_tokens", 200);
-                        jsonPayload.put("temperature", 0.4);
+                        jsonPayload.put("temperature", 0.5);
                     } catch (JSONException e) {
                         e.printStackTrace();
                     }
