@@ -93,6 +93,16 @@ public class ChatActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        
+        // Check for API key and determine where to find it
+        if (!ApiKeyManager.hasApiKey(this)) {
+            // No API key found anywhere, start QR scanner activity
+            Intent intent = new Intent(this, QRScannerActivity.class);
+            startActivity(intent);
+            finish();
+            return;
+        }
+        
         setContentView(R.layout.activity_chat);
         tvResponse = findViewById(R.id.tvResponse);
         progressBar = findViewById(R.id.progressBar);
@@ -332,7 +342,7 @@ public class ChatActivity extends Activity {
                         .url(urlString)
                         .post(requestBody)
                         .addHeader("Content-Type", "application/json")
-                        .addHeader("Authorization", "Bearer " + Secrets.API_KEY)
+                        .addHeader("Authorization", "Bearer " + ApiKeyManager.getApiKey(ChatActivity.this))
                         .build();
                 Response response = newClient.newCall(request).execute();
 
